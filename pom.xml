@@ -307,9 +307,21 @@
 
     <!-- Adds a dependency on the Beam Google Cloud Platform IO module. -->
     <dependency>
+      <groupId>com.google.api.grpc</groupId>
+      <artifactId>grpc-google-common-protos</artifactId>
+      <version>0.1.9</version>
+    </dependency>
+
+    <dependency>
       <groupId>org.apache.beam</groupId>
       <artifactId>beam-sdks-java-io-google-cloud-platform</artifactId>
       <version>${beam.version}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>com.google.api.grpc</groupId>
+          <artifactId>grpc-google-common-protos</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
 
     <!-- Dependencies below this line are specific dependencies needed by the examples code. -->
@@ -403,7 +415,7 @@
       <artifactId>hamcrest-core</artifactId>
       <version>${hamcrest.version}</version>
     </dependency>
-    
+
     <dependency>
       <groupId>org.hamcrest</groupId>
       <artifactId>hamcrest-library</artifactId>
@@ -423,12 +435,13 @@
       <version>${beam.version}</version>
       <scope>test</scope>
     </dependency>
-    
+
     <dependency>
       <groupId>org.mockito</groupId>
       <artifactId>mockito-core</artifactId>
       <version>${mockito.version}</version>
       <scope>test</scope>
     </dependency>
+
   </dependencies>
 </project>
