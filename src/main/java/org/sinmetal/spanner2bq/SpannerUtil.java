@@ -57,6 +57,11 @@ public class SpannerUtil {
             List<TableFieldSchema> tableFieldSchemas = tableSchemaMap.get(tableName);
             String columnName = struct.getString("column_name");
             String spannerColumnType = struct.getString("spanner_type");
+            TableFieldSchema tableFieldSchema = createTableFieldSchema(columnName, spannerColumnType);
+            if ("BYTES".equals(tableFieldSchema.getType())) {
+                // BYTESはBigQueryに入れてもどうにもできないのでスルー
+                continue;
+            }
             tableFieldSchemas.add(createTableFieldSchema(columnName, spannerColumnType));
         }
 

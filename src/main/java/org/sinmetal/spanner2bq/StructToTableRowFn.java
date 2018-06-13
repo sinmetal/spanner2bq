@@ -44,11 +44,7 @@ public class StructToTableRowFn extends DoFn<Struct, TableRow> {
                     }
                     break;
                 case BYTES:
-                    try {
-                        row.put(sf.getName(), c.element().getBytes(sf.getName()));
-                    } catch (NullPointerException e) {
-                        row.put(sf.getName(), null);
-                    }
+                    // BYTESはBigQueryに入れてもどうにもできないのでスルー
                     break;
                 case TIMESTAMP:
                     try {
@@ -103,11 +99,7 @@ public class StructToTableRowFn extends DoFn<Struct, TableRow> {
                             }
                             break;
                         case BYTES:
-                            try {
-                                row.put(sf.getName(), c.element().getBytesList(sf.getName()));
-                            } catch (NullPointerException e) {
-                                row.put(sf.getName(), null);
-                            }
+                            // BYTESはBigQueryに入れてもどうにもできないのでスルー
                             break;
                         case TIMESTAMP:
                             try {
