@@ -2,17 +2,21 @@ package org.sinmetal.spanner2bq;
 
 import com.google.api.services.bigquery.model.TableFieldSchema;
 import com.google.api.services.bigquery.model.TableReference;
+import com.google.api.services.bigquery.model.TableRow;
 import com.google.api.services.bigquery.model.TableSchema;
 import com.google.cloud.spanner.Struct;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO;
 import org.apache.beam.sdk.io.gcp.spanner.SpannerConfig;
 import org.apache.beam.sdk.io.gcp.spanner.SpannerIO;
-import org.apache.beam.sdk.options.*;
+import org.apache.beam.sdk.options.Description;
+import org.apache.beam.sdk.options.PipelineOptions;
+import org.apache.beam.sdk.options.PipelineOptionsFactory;
+import org.apache.beam.sdk.options.Validation;
 import org.apache.beam.sdk.values.PCollection;
 
-import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.logging.Logger;
 
 public class SpannerToBigQuery {
@@ -21,28 +25,36 @@ public class SpannerToBigQuery {
 
     public interface SpannerToBigQueryOptions extends PipelineOptions {
 
-        /** Get the Google Cloud project id. */
+        /**
+         * Get the Google Cloud project id.
+         */
         @Description("Google Cloud project id")
         @Validation.Required
         String getSpannerProjectId();
 
         void setSpannerProjectId(String value);
 
-        /** Get the Spanner instance id to read data from. */
+        /**
+         * Get the Spanner instance id to read data from.
+         */
         @Description("The Spanner instance id to write into")
         @Validation.Required
         String getInputSpannerInstanceId();
 
         void setInputSpannerInstanceId(String value);
 
-        /** Get the Spanner database name to read from. */
+        /**
+         * Get the Spanner database name to read from.
+         */
         @Description("Name of the Spanner database to read from")
         @Validation.Required
         String getInputSpannerDatabaseId();
 
         void setInputSpannerDatabaseId(String value);
 
-        /** Get the Google Cloud project id. */
+        /**
+         * Get the Google Cloud project id.
+         */
         @Description("Google Cloud project id")
         @Validation.Required
         String getBigQueryProjectId();
@@ -62,76 +74,32 @@ public class SpannerToBigQuery {
 
         Pipeline p = Pipeline.create(options);
 
-//        final PCollectionView<Transaction> transaction =
-//                p.apply(
-//                        SpannerIO.createTransaction()
-//                                .withSpannerConfig(spannerConfig)
-//                                .withTimestampBound(TimestampBound.ofReadTimestamp(Timestamp.now())));
+        Map<String, List<TableFieldSchema>> allTableSchema = SpannerUtil.getAllTableSchema(options.getSpannerProjectId(), options.getInputSpannerInstanceId(), options.getInputSpannerDatabaseId());
 
-//        final PCollection<Struct> rows =
-//                p.apply(
-//                    SpannerIO.read()
-//                        .withSpannerConfig(spannerConfig)
-//                        .withQuery(" SELECT"
-//                                + "  t.table_catalog,"
-//                                + "  t.table_schema,"
-//                                + "  t.table_name,"
-//                                + "  t.column_name,"
-//                                + "  t.ordinal_position,"
-//                                + "  t.column_default,"
-//                                + "  t.data_type,"
-//                                + "  t.is_nullable,"
-//                                + "  t.spanner_type"
-//                                + " FROM"
-//                                + "  information_schema.columns AS t"
-//                                + " ORDER BY"
-//                                + "  t.table_catalog,"
-//                                + "  t.table_schema,"
-//                                + "  t.table_name,"
-//                                + "  t.ordinal_position"));
+        for(Map.Entry<String, List<TableFieldSchema>> entry : allTableSchema.entrySet()) {
+            String tableName = entry.getKey();
 
-//        final PCollection<Struct> rows =
-//                p.apply(
-//                        SpannerIO.read()
-//                                .withSpannerConfig(spannerConfig)
-//                                .withQuery("SELECT * FROM Albums LIMIT 100"));
+            TableReference tableRef = new TableReference();
+            tableRef.setProjectId(options.getBigQueryProjectId());
+            tableRef.setDatasetId("spanner");
+            tableRef.setTableId(tableName);
 
-//        // [START spanner_dataflow_readall]
-//        PCollection<Struct> allRecords =
-//                p.apply(SpannerIO.read()
-//                    .withSpannerConfig(spannerConfig)
-//                    .withQuery("SELECT t.table_name FROM information_schema.tables AS t WHERE t"
-//                        + ".table_catalog = '' AND t.table_schema = ''"))
-//                .apply(MapElements.into(TypeDescriptor.of(ReadOperation.class))
-//                        .via((SerializableFunction<Struct, ReadOperation>) input -> {
-//                            String tableName = input.getString(0);
-//                            logger.info("tableName:" + tableName);
-//                            return ReadOperation.create().withQuery("SELECT * FROM " + tableName);
-//                        }))
-//                .apply(SpannerIO.readAll().withSpannerConfig(spannerConfig));
-//        // [END spanner_dataflow_readall]
+            TableSchema schema = new TableSchema().setFields(entry.getValue());
 
-        TableReference tableRef = new TableReference();
-        tableRef.setProjectId(options.getBigQueryProjectId());
-        tableRef.setDatasetId("spanner");
-        tableRef.setTableId("Sample");
+            PCollection<Struct> records = p.apply(
+                    tableName,
+                    SpannerIO.read()
+                            .withSpannerConfig(spannerConfig)
+                            .withQuery("SELECT * FROM " + tableName));
 
-        List<TableFieldSchema> fields = new ArrayList<>();
-        fields.add(new TableFieldSchema().setName("Id").setType("STRING"));
-        TableSchema schema = new TableSchema().setFields(fields);
+            PCollection<TableRow> tableRows = records.apply(new StructToTableRowTransform());
+            tableRows.apply(BigQueryIO.writeTableRows()
+                    .withSchema(schema)
+                    .withWriteDisposition(BigQueryIO.Write.WriteDisposition.WRITE_TRUNCATE)
+                    .withCreateDisposition(BigQueryIO.Write.CreateDisposition.CREATE_IF_NEEDED)
+                    .to(tableRef));
+        }
 
-        PCollection<Struct> records = p.apply(
-                SpannerIO.read()
-                        .withSpannerConfig(spannerConfig)
-                        .withQuery("SELECT * FROM Albums"));
-
-        records.apply(new StructToTableRowTransform())
-                .apply(BigQueryIO.writeTableRows()
-                        .withSchema(schema)
-                        .withWriteDisposition(BigQueryIO.Write.WriteDisposition.WRITE_TRUNCATE)
-                        .withCreateDisposition(BigQueryIO.Write.CreateDisposition.CREATE_IF_NEEDED)
-                        .to(tableRef));
-
-        p.run().waitUntilFinish();
+        p.run();
     }
 }
