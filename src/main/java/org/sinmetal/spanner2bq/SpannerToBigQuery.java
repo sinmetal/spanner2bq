@@ -4,16 +4,20 @@ import com.google.api.services.bigquery.model.TableFieldSchema;
 import com.google.api.services.bigquery.model.TableReference;
 import com.google.api.services.bigquery.model.TableRow;
 import com.google.api.services.bigquery.model.TableSchema;
+import com.google.cloud.Timestamp;
 import com.google.cloud.spanner.Struct;
+import com.google.cloud.spanner.TimestampBound;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO;
 import org.apache.beam.sdk.io.gcp.spanner.SpannerConfig;
 import org.apache.beam.sdk.io.gcp.spanner.SpannerIO;
+import org.apache.beam.sdk.io.gcp.spanner.Transaction;
 import org.apache.beam.sdk.options.Description;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.options.Validation;
 import org.apache.beam.sdk.values.PCollection;
+import org.apache.beam.sdk.values.PCollectionView;
 
 import java.util.List;
 import java.util.Map;
@@ -72,9 +76,15 @@ public class SpannerToBigQuery {
                         .withInstanceId(options.getInputSpannerInstanceId())
                         .withDatabaseId(options.getInputSpannerDatabaseId());
 
+        Map<String, List<TableFieldSchema>> allTableSchema = SpannerUtil.getAllTableSchema(options.getSpannerProjectId(), options.getInputSpannerInstanceId(), options.getInputSpannerDatabaseId());
+
         Pipeline p = Pipeline.create(options);
 
-        Map<String, List<TableFieldSchema>> allTableSchema = SpannerUtil.getAllTableSchema(options.getSpannerProjectId(), options.getInputSpannerInstanceId(), options.getInputSpannerDatabaseId());
+        final PCollectionView<Transaction> transaction =
+                p.apply(
+                        SpannerIO.createTransaction()
+                                .withSpannerConfig(spannerConfig)
+                                .withTimestampBound(TimestampBound.ofReadTimestamp(Timestamp.now())));
 
         for(Map.Entry<String, List<TableFieldSchema>> entry : allTableSchema.entrySet()) {
             String tableName = entry.getKey();
@@ -90,7 +100,8 @@ public class SpannerToBigQuery {
                     tableName,
                     SpannerIO.read()
                             .withSpannerConfig(spannerConfig)
-                            .withQuery("SELECT * FROM " + tableName));
+                            .withQuery("SELECT * FROM " + tableName)
+                            .withTransaction(transaction));
 
             PCollection<TableRow> tableRows = records.apply(new StructToTableRowTransform());
             tableRows.apply(BigQueryIO.writeTableRows()
